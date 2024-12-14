@@ -12,10 +12,11 @@ use crate::{
 
 #[derive(Clone)]
 pub struct Position {
-    pub bbs: [Bitboard; 12],
-    pub wo: Bitboard,
-    pub bo: Bitboard,
-    pub ao: Bitboard,
+    pub pps: [PieceType; 64],               // Piece placements
+    pub bbs: [Bitboard; 12],                // Piece Bitboards
+    pub wo: Bitboard,                       // White occupancy
+    pub bo: Bitboard,                       // Black occupancy
+    pub ao: Bitboard,                       // All occupancies
     pub side: Color,
     pub en_passant_sq: Square,
     pub castling_rights: CastlingRights,
@@ -47,6 +48,16 @@ impl Position {
 
     pub fn starting_position() -> Position {
         Position {
+            pps: [
+                PieceType::BR, PieceType::BN, PieceType::BB, PieceType::BQ, PieceType::BK, PieceType::BB, PieceType::BN, PieceType::BR,
+                PieceType::BP, PieceType::BP, PieceType::BP, PieceType::BP, PieceType::BP, PieceType::BP, PieceType::BP, PieceType::BP,
+                PieceType::None, PieceType::None, PieceType::None, PieceType::None, PieceType::None, PieceType::None, PieceType::None, PieceType::None,
+                PieceType::None, PieceType::None, PieceType::None, PieceType::None, PieceType::None, PieceType::None, PieceType::None, PieceType::None,
+                PieceType::None, PieceType::None, PieceType::None, PieceType::None, PieceType::None, PieceType::None, PieceType::None, PieceType::None,
+                PieceType::None, PieceType::None, PieceType::None, PieceType::None, PieceType::None, PieceType::None, PieceType::None, PieceType::None,
+                PieceType::WP, PieceType::WP, PieceType::WP, PieceType::WP, PieceType::WP, PieceType::WP, PieceType::WP, PieceType::WP,
+                PieceType::WR, PieceType::WN, PieceType::WB, PieceType::WQ, PieceType::WK, PieceType::WB, PieceType::WN, PieceType::WR,
+            ],
             bbs: [
                 Bitboard::WP,
                 Bitboard::WN,
@@ -73,16 +84,20 @@ impl Position {
     #[inline(always)]
     pub fn set_piece(&mut self, piece: PieceType, sq: Square) {
         self.bbs[piece].set_sq(sq);
+        self.pps[sq] = piece;
     }
 
     #[inline(always)]
     pub fn remove_piece(&mut self, piece: PieceType, sq: Square) {
         self.bbs[piece].pop_sq(sq);
+        self.pps[sq] = PieceType::None;
     }
 
     #[inline]
     pub fn make_move(&mut self, bit_move: BitMove) -> bool {
-        let (source, target, piece, capture, flag) = bit_move.decode();
+        let (source, target, flag) = bit_move.decode();
+        let piece = self.pps[source];
+        let capture = self.pps[target];
 
         debug_assert_eq!(piece.color(), self.side);
         debug_assert!(capture == PieceType::None || capture.color() == self.side.opposite());
@@ -95,7 +110,7 @@ impl Position {
 
         // Removes captured piece
         if capture != PieceType::None {
-            self.remove_piece(capture, target);
+            self.bbs[capture].pop_sq(target);
         }
 
         // Resets en-passant square
@@ -189,8 +204,8 @@ impl Position {
     }
 
     #[inline]
-    pub fn undo_move(&mut self, bit_move: BitMove, old_castling_rights: CastlingRights) {
-        let (source, target, piece, capture, flag) = bit_move.decode();
+    pub fn undo_move(&mut self, bit_move: BitMove, piece: PieceType, capture: PieceType, old_castling_rights: CastlingRights) {
+        let (source, target, flag) = bit_move.decode();
 
         // Switches side first to make it easier to conceptualize
         self.side.switch();
@@ -234,40 +249,36 @@ impl Position {
                 self.remove_piece(PieceType::BR, Square::D8);
             }
             MoveFlag::PromoQ => {
-                self.remove_piece(
+                self.bbs[
                     match self.side {
                         Color::White => PieceType::WQ,
                         Color::Black => PieceType::BQ,
-                    },
-                    target,
-                );
+                    }
+                ].pop_sq(target);
             }
             MoveFlag::PromoR => {
-                self.remove_piece(
+                self.bbs[
                     match self.side {
                         Color::White => PieceType::WR,
                         Color::Black => PieceType::BR,
-                    },
-                    target,
-                );
+                    }
+                ].pop_sq(target);
             }
             MoveFlag::PromoN => {
-                self.remove_piece(
+                self.bbs[
                     match self.side {
                         Color::White => PieceType::WN,
                         Color::Black => PieceType::BN,
-                    },
-                    target,
-                );
+                    }
+                ].pop_sq(target);
             }
             MoveFlag::PromoB => {
-                self.remove_piece(
+                self.bbs[
                     match self.side {
                         Color::White => PieceType::WB,
                         Color::Black => PieceType::BB,
-                    },
-                    target,
-                );
+                    }
+                ].pop_sq(target);
             }
         };
 
@@ -307,6 +318,7 @@ impl Position {
 impl Default for Position {
     fn default() -> Position {
         Position {
+            pps: [PieceType::None; 64],
             bbs: [Bitboard::EMPTY; 12],
             wo: Bitboard::EMPTY,
             bo: Bitboard::EMPTY,
@@ -324,17 +336,8 @@ impl fmt::Display for Position {
         for rank in 0..8_u8 {
             s += &format!("  {}  ", 8 - rank);
             for file in 0..8_u8 {
-                let mut is_occupied = false;
                 let sq = Square::from(rank * 8 + file);
-                for piece_type in PieceType::ALL_PIECES {
-                    if Bitboard::is_set_sq(&self.bbs[piece_type], sq) {
-                        s += &format!("{} ", piece_type);
-                        is_occupied = true;
-                    }
-                }
-                if !is_occupied {
-                    s += ". ";
-                }
+                s += &format!("{} ", if self.pps[sq] != PieceType::None { self.pps[sq].to_string() } else { ".".to_owned() });
             }
             s += "\n";
         }

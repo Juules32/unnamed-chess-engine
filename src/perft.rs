@@ -1,4 +1,4 @@
-use crate::{position::Position, fen, move_gen, pl, timer::Timer};
+use crate::{castling_rights, fen, move_gen, pl, position::Position, timer::Timer};
 
 pub struct PerftResult {
     depth: u8,
@@ -91,12 +91,11 @@ pub fn perft_test(position: &mut Position, depth: u8, print_result: bool) -> Per
         let position_copy = position.clone();
         if position.make_move(*mv) {
             perft_driver(position, depth - 1, &mut current_nodes);
+            if print_result {
+                pl!(format!("  Move: {:<5} Nodes: {}", mv.to_uci_string(), current_nodes));
+            }
         }
         *position = position_copy;
-
-        if print_result {
-            pl!(format!("  Move: {:<5} Nodes: {}", mv.to_uci_string(), current_nodes));
-        }
 
         cumulative_nodes += current_nodes;
         current_nodes = 0;
@@ -130,13 +129,14 @@ fn perft_driver(position: &mut Position, depth: u8, nodes: &mut u64) {
     }
 
     let move_list = move_gen::generate_moves(position);
-    
+    let castling_rights = position.castling_rights;
     for mv in move_list.iter() {
-        let position_copy = position.clone();
+        let piece = position.pps[mv.source()];
+        let capture = position.pps[mv.target()];
         if position.make_move(*mv) {
             perft_driver(position, depth - 1, nodes);
         }
-        *position = position_copy;
+        position.undo_move(*mv, piece, capture, castling_rights);
     }
 }
 
