@@ -28,6 +28,6 @@ use piece::PieceType;
 use square::Square;
 
 fn main() {
-    move_init::init();
+    move_masks::init();
     perft::short_perft_tests();
 }
