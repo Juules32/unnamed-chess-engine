@@ -1,4 +1,4 @@
-use crate::{bit_move::BitMove, fen, move_gen, pl, position::Position, timer::Timer};
+use crate::{bit_move::BitMove, fen, move_masks, pl, position::Position, timer::Timer};
 
 pub struct PerftResult {
     depth: u8,
@@ -84,7 +84,7 @@ pub fn perft_test(position: &Position, depth: u8, print_result: bool) -> PerftRe
 
     if print_result { pl!("\n  Performance Test\n"); }
 
-    let move_list = move_gen::generate_moves(position);
+    let move_list = position.generate_moves();
     let moves_and_nodes: Vec<(BitMove, u64)> = move_list
         .iter()
         .filter_map(|mv| {
@@ -132,7 +132,8 @@ fn perft_driver(position: &Position, depth: u8, nodes: &mut u64) {
         return;
     }
 
-    let move_list = move_gen::generate_moves(&position);
+    let move_list = position.generate_moves();
+    
     for mv in move_list.iter() {
         let mut position_clone = position.clone();
         if position_clone.make_move(*mv) {
