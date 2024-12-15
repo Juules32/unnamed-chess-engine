@@ -85,21 +85,22 @@ pub fn perft_test(position: &Position, depth: u8, print_result: bool) -> PerftRe
     if print_result { pl!("\n  Performance Test\n"); }
 
     let move_list = position.generate_moves();
-    let moves_and_nodes: Vec<(BitMove, u64)> = move_list
+    let cumulative_nodes = move_list
         .iter()
-        .filter_map(|mv| {
+        .map(|mv| {
             let mut position_copy = position.clone();
             if position_copy.make_move(*mv) {
                 let mut nodes = 0;
                 perft_driver(&position_copy, depth - 1, &mut nodes);
-                Some((*mv, nodes))
+                if print_result {
+                    pl!(format!("  Move: {:<5} Nodes: {}", mv.to_uci_string(), nodes));
+                }
+                nodes
             } else {
-                None
+                0
             }
         })
-        .collect();
-
-    let cumulative_nodes: u64 = moves_and_nodes.iter().map(|&(_, nodes)| nodes).sum();
+        .collect::<Vec<_>>().into_iter().sum();
 
     let perft_result = PerftResult {
         depth,
@@ -109,17 +110,13 @@ pub fn perft_test(position: &Position, depth: u8, print_result: bool) -> PerftRe
 
     if print_result {
         pl!(format!("
-Depth: {}
-Nodes: {}
-Time: {} milliseconds\n",
+ Depth: {}
+ Nodes: {}
+  Time: {} milliseconds\n",
             perft_result.depth,
             perft_result.nodes,
             perft_result.time
         ));
-
-        for (mv, nodes) in moves_and_nodes {
-            pl!(format!("  Move: {:<5} Nodes: {}\n", mv.to_uci_string(), nodes));
-        }
     }
 
     perft_result
