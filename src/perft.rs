@@ -1,4 +1,4 @@
-use crate::{position::Position, fen, move_gen, pl, timer::Timer};
+use crate::{bit_move::BitMove, fen, move_gen, pl, position::Position, timer::Timer};
 
 pub struct PerftResult {
     depth: u8,
@@ -79,28 +79,27 @@ static SHORT_PERFT_POSITIONS: [PerftPosition; 5] = [
     },
 ];
 
-pub fn perft_test(position: &mut Position, depth: u8, print_result: bool) -> PerftResult {
-    let mut current_nodes = 0_u64;
-    let mut cumulative_nodes = 0_u64;
+pub fn perft_test(position: &Position, depth: u8, print_result: bool) -> PerftResult {
     let timer = Timer::new();
 
     if print_result { pl!("\n  Performance Test\n"); }
 
     let move_list = move_gen::generate_moves(position);
-    let position_copy = position.clone();
-    for mv in move_list.iter() {
-        if position.make_move(*mv) {
-            perft_driver(position, depth - 1, &mut current_nodes);
-        }
-        *position = position_copy.clone();
+    let moves_and_nodes: Vec<(BitMove, u64)> = move_list
+        .iter()
+        .filter_map(|mv| {
+            let mut position_copy = position.clone();
+            if position_copy.make_move(*mv) {
+                let mut nodes = 0;
+                perft_driver(&position_copy, depth - 1, &mut nodes);
+                Some((*mv, nodes))
+            } else {
+                None
+            }
+        })
+        .collect();
 
-        if print_result {
-            pl!(format!("  Move: {:<5} Nodes: {}", mv.to_uci_string(), current_nodes));
-        }
-
-        cumulative_nodes += current_nodes;
-        current_nodes = 0;
-    }
+    let cumulative_nodes: u64 = moves_and_nodes.iter().map(|&(_, nodes)| nodes).sum();
 
     let perft_result = PerftResult {
         depth,
@@ -117,25 +116,28 @@ Time: {} milliseconds\n",
             perft_result.nodes,
             perft_result.time
         ));
+
+        for (mv, nodes) in moves_and_nodes {
+            pl!(format!("  Move: {:<5} Nodes: {}\n", mv.to_uci_string(), nodes));
+        }
     }
 
     perft_result
 }
 
 #[inline(always)]
-fn perft_driver(position: &mut Position, depth: u8, nodes: &mut u64) {
+fn perft_driver(position: &Position, depth: u8, nodes: &mut u64) {
     if depth == 0 {
         *nodes += 1;
         return;
     }
 
-    let move_list = move_gen::generate_moves(position);
-    let position_ref = position.clone();
+    let move_list = move_gen::generate_moves(&position);
     for mv in move_list.iter() {
-        if position.make_move(*mv) {
-            perft_driver(position, depth - 1, nodes);
+        let mut position_clone = position.clone();
+        if position_clone.make_move(*mv) {
+            perft_driver(&position_clone, depth - 1, nodes);
         }
-        *position = position_ref.clone();
     }
 }
 
@@ -148,8 +150,8 @@ fn perft_tests(perft_positions: &[PerftPosition; 5]) {
     println!("  |-----------------------------------------------------------------|");
 
     for perft_position in perft_positions {
-        let mut position = fen::parse(perft_position.fen).expect("FEN parser could not parse given position!");
-        let perft_result = perft_test(&mut position, perft_position.depth, false);
+        let position = fen::parse(perft_position.fen).expect("FEN parser could not parse given position!");
+        let perft_result = perft_test(&position, perft_position.depth, false);
         if perft_result.nodes != perft_position.target_nodes {
             panic!("Perft test of {} did not get the target nodes!", perft_position.name);
         }
